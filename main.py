@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Cutest picture entry for make.fun's "Make the cutest picture" bounty.
+"""Cutest picture entry v2 for make.fun's "Make the cutest picture" bounty.
 
-A Python 3.13 program, standard library only. It draws a fluffy cream
-kitten with a flower crown and huge amber eyes, hugging a tiny plush
-bunny, against a warm peach bokeh background, and writes the picture to
-/output/entry.png (or $MAKEFUN_OUTPUT_DIR/entry.png when set).
+A Python 3.13 program, standard library only. It draws a baby red panda
+cub in a mint knitted scarf hugging a tiny green frog, against a warm
+peach bokeh background, and writes the picture to /output/entry.png
+(or $MAKEFUN_OUTPUT_DIR/entry.png when set).
 
 How it works: every shape is a signed-distance field painted into a
-512x512 float buffer (discs, ellipses, rounded triangles, line segments,
-flowers made of rotated petals). The buffer is then upscaled to
-1024x1024 with bilinear interpolation, which also softens the edges,
-and encoded as a PNG by hand (zlib + struct + crc32, no Pillow needed).
+512x512 float buffer (discs, ellipses, rounded triangles, line segments),
+then upscaled to 1024x1024 with bilinear interpolation (which also
+softens the edges) and encoded as a PNG by hand (zlib + struct + crc32,
+no Pillow needed).
 
 Determinism: no randomness, no wall clock, no network, no dict-order
 dependence. Two runs write byte-identical files.
@@ -22,31 +22,28 @@ import os
 import struct
 import zlib
 
-RENDER = 512        # internal render size (square)
-OUT_SIZE = 1024     # final image size (square)
+RENDER = 512
+OUT_SIZE = 1024
 OUT_NAME = "entry.png"
 
-
 # ---------------------------------------------------------------- palette
-CREAM = (255, 246, 230)      # kitten fur
-CREAM_DARK = (245, 223, 192)  # fur shading / outline
-EAR_PINK = (247, 184, 196)    # inner ear
-NOSE_PINK = (244, 140, 160)   # nose
-BLUSH = (248, 170, 185)       # cheek blush
-EYE_AMBER = (232, 163, 61)    # iris
-EYE_BROWN = (90, 58, 46)      # iris ring / pupil outline
-PUPIL = (28, 18, 14)          # pupil
-INK = (74, 48, 38)            # mouth / lashes / whiskers
-BUNNY = (237, 232, 226)       # plush bunny fur
-BUNNY_DARK = (214, 206, 198)  # bunny shading
-BOW_PINK = (242, 140, 168)    # bunny bow
-PETAL_PINK = (249, 168, 192)
-PETAL_WHITE = (255, 255, 255)
-FLOWER_YELLOW = (255, 201, 60)
-LEAF = (156, 203, 122)
+PANDA = (216, 112, 56)        # rusty orange fur
+PANDA_DARK = (178, 84, 40)    # fur shading / outline
+PANDA_CREAM = (255, 240, 219) # face mask / chest
+EAR_INNER = (255, 214, 188)   # inner ear
+EYE_BROWN = (150, 96, 54)     # iris
+EYE_RING = (96, 60, 40)       # iris ring
+PUPIL = (30, 18, 14)          # pupil
+INK = (74, 48, 38)            # mouth / lashes
+BLUSH = (248, 150, 140)       # cheek blush
+NOSE = (58, 34, 28)           # nose
+FROG = (118, 198, 92)         # frog green
+FROG_DARK = (72, 152, 62)     # frog shading
+FROG_BELLY = (222, 240, 178)  # frog belly
+SCARF = (140, 210, 184)       # mint scarf
+SCARF_DARK = (96, 174, 148)   # scarf shading
 BG_TOP = (255, 231, 214)
 BG_BOTTOM = (255, 248, 236)
-
 
 # ---------------------------------------------------------------- helpers
 def clamp(x, lo=0.0, hi=1.0):
@@ -72,7 +69,6 @@ def blend(buf, idx, rgb, alpha):
     buf[idx] = buf[idx] * inv + rgb[0] * alpha
     buf[idx + 1] = buf[idx + 1] * inv + rgb[1] * alpha
     buf[idx + 2] = buf[idx + 2] * inv + rgb[2] * alpha
-
 
 def disc(buf, cx, cy, r, rgb, alpha=1.0, aa=1.5):
     """Filled circle with a soft edge."""
@@ -107,7 +103,6 @@ def ring(buf, cx, cy, r, width, rgb, alpha=1.0, aa=1.5):
             if a > 0.0:
                 blend(buf, row + x * 3, rgb, a * alpha)
 
-
 def ellipse(buf, cx, cy, rx, ry, rgb, alpha=1.0, aa=1.5, rot=0.0):
     """Filled ellipse, optionally rotated (rot in radians)."""
     co = math.cos(rot)
@@ -127,7 +122,6 @@ def ellipse(buf, cx, cy, rx, ry, rgb, alpha=1.0, aa=1.5, rot=0.0):
             a = edge(d * min(rx, ry), aa)
             if a > 0.0:
                 blend(buf, row + x * 3, rgb, a * alpha)
-
 
 def triangle(buf, ax, ay, bx, by, cx, cy, rgb, alpha=1.0, aa=1.5):
     """Filled triangle with soft edges (signed distance to the triangle)."""
@@ -155,7 +149,6 @@ def triangle(buf, ax, ay, bx, by, cx, cy, rgb, alpha=1.0, aa=1.5):
                 (qx - fx * de) ** 2 + (qy - fy * de) ** 2,
                 (rx - gx * de) ** 2 + (ry - gy * de) ** 2,
             )
-            # inside test: same winding on all three edges
             c1 = ex * py - ey * px
             c2 = fx * qy - fy * qx
             c3 = gx * ry - gy * rx
@@ -166,7 +159,6 @@ def triangle(buf, ax, ay, bx, by, cx, cy, rgb, alpha=1.0, aa=1.5):
             a = edge(d, aa)
             if a > 0.0:
                 blend(buf, row + x * 3, rgb, a * alpha)
-
 
 def segment(buf, x1, y1, x2, y2, width, rgb, alpha=1.0, aa=1.2):
     """Soft round-capped line segment."""
@@ -204,13 +196,8 @@ def sparkle(buf, cx, cy, r, rgb, alpha=0.8):
             if a > 0.0:
                 blend(buf, row + x * 3, rgb, a * alpha)
 
-
 def flower(buf, cx, cy, r, petal, center):
-    """Five-petal daisy: rotated petal ellipses, yellow centre, two leaves."""
-    ellipse(buf, cx - r * 0.85, cy + r * 0.45, r * 0.42, r * 0.22,
-            LEAF, 0.95, 1.5, rot=0.7)
-    ellipse(buf, cx + r * 0.85, cy + r * 0.45, r * 0.42, r * 0.22,
-            LEAF, 0.95, 1.5, rot=-0.7)
+    """Tiny five-petal daisy: rotated petal ellipses, yellow centre."""
     for k in range(5):
         ang = -math.pi / 2 + k * (2 * math.pi / 5)
         px = cx + math.cos(ang) * r * 0.52
@@ -218,29 +205,30 @@ def flower(buf, cx, cy, r, petal, center):
         ellipse(buf, px, py, r * 0.30, r * 0.52, petal, 1.0, 1.5,
                 rot=ang + math.pi / 2)
     disc(buf, cx, cy, r * 0.30, center, 1.0, 1.2)
-    disc(buf, cx - r * 0.08, cy - r * 0.08, r * 0.10, (255, 232, 150), 1.0, 1.0)
+    disc(buf, cx - r * 0.08, cy - r * 0.08, r * 0.10,
+         (255, 232, 150), 1.0, 1.0)
 
 
 def eye(buf, cx, cy, r):
-    """One huge amber eye: ring, iris, pupil, two sparkle highlights, lashes."""
-    disc(buf, cx, cy, r, EYE_AMBER, 1.0, 1.5)
-    disc(buf, cx, cy, r * 0.78, (176, 110, 38), 1.0, 1.5)
+    """One huge brown eye: iris, pupil, two sparkle highlights, lashes."""
+    disc(buf, cx, cy, r, EYE_BROWN, 1.0, 1.5)
+    disc(buf, cx, cy, r * 0.78, (110, 66, 38), 1.0, 1.5)
     disc(buf, cx, cy, r * 0.52, PUPIL, 1.0, 1.5)
-    ring(buf, cx, cy, r, 2.0, EYE_BROWN, 0.85, 1.5)
-    disc(buf, cx - r * 0.34, cy - r * 0.36, r * 0.26, (255, 255, 255), 1.0, 1.2)
-    disc(buf, cx + r * 0.30, cy + r * 0.34, r * 0.12, (255, 255, 255), 0.95, 1.0)
-    # three little lashes on the upper outer edge
-    for k, ang in enumerate((-0.5, -0.15, 0.2)):
+    ring(buf, cx, cy, r, 2.0, EYE_RING, 0.85, 1.5)
+    disc(buf, cx - r * 0.34, cy - r * 0.36, r * 0.26,
+         (255, 255, 255), 1.0, 1.2)
+    disc(buf, cx + r * 0.30, cy + r * 0.34, r * 0.12,
+         (255, 255, 255), 0.95, 1.0)
+    for ang in (-0.5, -0.15, 0.2):
         sx = cx + math.cos(ang - math.pi / 2) * r * 0.98
         sy = cy + math.sin(ang - math.pi / 2) * r * 0.98
         ex = cx + math.cos(ang - math.pi / 2) * r * 1.22
         ey = cy + math.sin(ang - math.pi / 2) * r * 1.22
         segment(buf, sx, sy, ex, ey, 2.2, INK, 0.85)
 
-
 # ---------------------------------------------------------------- picture
 def draw():
-    """Paint the kitten into a RENDER x RENDER float buffer, back to front."""
+    """Paint the red panda cub and frog into a float buffer, back to front."""
     buf = [0.0] * (RENDER * RENDER * 3)
 
     # background: warm vertical gradient, peach top to cream bottom
@@ -274,98 +262,97 @@ def draw():
                       (460, 330, 8), (110, 380, 6), (400, 90, 6)]:
         sparkle(buf, cx, cy, r, (255, 250, 220), 0.9)
 
-    # kitten body: big soft shape the face and paws sit on
-    ellipse(buf, 256, 590, 195, 165, (251, 238, 220), 1.0, 2.0)
+    # small bushy banded tail nub peeking out at the bottom left
+    ellipse(buf, 45, 495, 62, 34, PANDA, 1.0, 2.0, rot=0.55)
+    ellipse(buf, 20, 480, 32, 8, PANDA_CREAM, 1.0, 2.0, rot=2.12)
+    ellipse(buf, 55, 500, 32, 8, PANDA_CREAM, 1.0, 2.0, rot=2.12)
 
-    # ears: wide rounded triangles, fur outside, pink inside
-    triangle(buf, 108, 212, 142, 96, 228, 182, CREAM, 1.0, 2.0)
-    triangle(buf, 404, 212, 370, 96, 284, 182, CREAM, 1.0, 2.0)
-    triangle(buf, 130, 192, 150, 122, 202, 176, EAR_PINK, 1.0, 2.0)
-    triangle(buf, 382, 192, 362, 122, 310, 176, EAR_PINK, 1.0, 2.0)
+    # cub body: orange shape with a cream chest the frog sits against
+    ellipse(buf, 256, 600, 190, 160, PANDA, 1.0, 2.0)
+    ellipse(buf, 256, 580, 125, 115, PANDA_CREAM, 1.0, 2.0)
 
-    # face: big round cream disc with a soft darker rim
-    disc(buf, 256, 265, 148, CREAM, 1.0, 2.0)
-    ring(buf, 256, 265, 148, 2.5, CREAM_DARK, 0.55, 2.0)
+    # ears: wide rounded triangles, orange outside, pale inside
+    triangle(buf, 108, 212, 142, 96, 228, 182, PANDA, 1.0, 2.0)
+    triangle(buf, 404, 212, 370, 96, 284, 182, PANDA, 1.0, 2.0)
+    triangle(buf, 130, 192, 150, 122, 202, 176, EAR_INNER, 1.0, 2.0)
+    triangle(buf, 382, 192, 362, 122, 310, 176, EAR_INNER, 1.0, 2.0)
+    # little cream tuft on top of the head between the ears
+    triangle(buf, 244, 128, 268, 128, 256, 152, PANDA_CREAM, 1.0, 1.5)
 
-    # flower crown arcing across the forehead between the ears
-    crown = [
-        (158, 168, 15, PETAL_PINK),
-        (203, 148, 17, PETAL_WHITE),
-        (256, 140, 18, PETAL_PINK),
-        (309, 148, 17, PETAL_WHITE),
-        (354, 168, 15, PETAL_PINK),
-    ]
-    for cx, cy, r, petal in crown:
-        flower(buf, cx, cy, r, petal, FLOWER_YELLOW)
+    # head: big round orange disc with a soft darker rim
+    disc(buf, 256, 258, 148, PANDA, 1.0, 2.0)
+    ring(buf, 256, 258, 148, 2.5, PANDA_DARK, 0.55, 2.0)
 
-    # soft tabby stripes on the forehead, and fur tufts on the cheeks
-    for sx, sy, ex, ey in [(228, 196, 232, 222), (256, 190, 256, 218),
-                           (284, 196, 280, 222)]:
-        segment(buf, sx, sy, ex, ey, 5.0, CREAM_DARK, 0.35)
-    triangle(buf, 118, 300, 104, 268, 128, 288, CREAM, 1.0, 2.0)
-    triangle(buf, 394, 300, 408, 268, 384, 288, CREAM, 1.0, 2.0)
+    # cream face mask across the eyes and muzzle, cheek tufts at the sides
+    ellipse(buf, 256, 288, 108, 86, PANDA_CREAM, 1.0, 2.0)
+    triangle(buf, 118, 300, 104, 268, 128, 288, PANDA, 1.0, 2.0)
+    triangle(buf, 394, 300, 408, 268, 384, 288, PANDA, 1.0, 2.0)
 
-    # the huge amber eyes
-    eye(buf, 198, 270, 36)
-    eye(buf, 314, 270, 36)
+    # dark tear marks under the eyes, then the huge brown eyes
+    ellipse(buf, 198, 308, 9, 14, PANDA_DARK, 0.30, 2.0)
+    ellipse(buf, 314, 308, 9, 14, PANDA_DARK, 0.30, 2.0)
+    eye(buf, 198, 268, 35)
+    eye(buf, 314, 268, 35)
 
-    # blush, nose, mouth, whiskers
-    ellipse(buf, 158, 332, 26, 14, BLUSH, 0.45, 2.0)
-    ellipse(buf, 354, 332, 26, 14, BLUSH, 0.45, 2.0)
-    triangle(buf, 244, 318, 268, 318, 256, 334, NOSE_PINK, 1.0, 1.5)
-    disc(buf, 252, 322, 3.5, (255, 190, 200), 0.9, 1.0)
-    segment(buf, 244, 332, 251, 340, 2.0, INK, 0.9)
-    segment(buf, 251, 340, 256, 333, 2.0, INK, 0.9)
-    segment(buf, 256, 333, 261, 340, 2.0, INK, 0.9)
-    segment(buf, 261, 340, 268, 332, 2.0, INK, 0.9)
-    for sx, sy, ex, ey in [(182, 312, 118, 296), (180, 326, 114, 322),
-                           (182, 340, 120, 350)]:
-        segment(buf, sx, sy, ex, ey, 1.6, (217, 193, 163), 0.75)
-    for sx, sy, ex, ey in [(330, 312, 394, 296), (332, 326, 398, 322),
-                           (330, 340, 392, 350)]:
-        segment(buf, sx, sy, ex, ey, 1.6, (217, 193, 163), 0.75)
+    # blush, nose, little mouth
+    ellipse(buf, 158, 330, 26, 14, BLUSH, 0.5, 2.0)
+    ellipse(buf, 354, 330, 26, 14, BLUSH, 0.5, 2.0)
+    triangle(buf, 244, 316, 268, 316, 256, 332, NOSE, 1.0, 1.5)
+    disc(buf, 252, 320, 3.5, (150, 110, 100), 0.9, 1.0)
+    segment(buf, 244, 330, 251, 338, 2.0, INK, 0.9)
+    segment(buf, 251, 338, 256, 331, 2.0, INK, 0.9)
+    segment(buf, 256, 331, 261, 338, 2.0, INK, 0.9)
+    segment(buf, 261, 338, 268, 330, 2.0, INK, 0.9)
 
-    # plush bunny held at the lower right: ears, head, bow, body
-    ellipse(buf, 322, 336, 13, 34, BUNNY, 1.0, 2.0, rot=-0.45)
-    ellipse(buf, 348, 344, 13, 34, BUNNY, 1.0, 2.0, rot=-0.85)
-    ellipse(buf, 322, 338, 6, 22, EAR_PINK, 0.9, 1.5, rot=-0.45)
-    ellipse(buf, 348, 346, 6, 22, EAR_PINK, 0.9, 1.5, rot=-0.85)
-    disc(buf, 318, 394, 42, BUNNY, 1.0, 2.0)
-    disc(buf, 302, 388, 4.5, PUPIL, 1.0, 1.2)
-    disc(buf, 332, 388, 4.5, PUPIL, 1.0, 1.2)
-    disc(buf, 300, 386, 1.6, (255, 255, 255), 0.9, 1.0)
-    disc(buf, 330, 386, 1.6, (255, 255, 255), 0.9, 1.0)
-    triangle(buf, 312, 400, 322, 400, 317, 407, NOSE_PINK, 1.0, 1.2)
-    segment(buf, 310, 408, 315, 413, 1.6, INK, 0.85)
-    segment(buf, 315, 413, 322, 408, 1.6, INK, 0.85)
-    ellipse(buf, 296, 406, 8, 5, BLUSH, 0.5, 1.5)
-    ellipse(buf, 338, 406, 8, 5, BLUSH, 0.5, 1.5)
-    # little pink bow under the bunny's chin
-    triangle(buf, 300, 424, 314, 418, 314, 430, BOW_PINK, 1.0, 1.5)
-    triangle(buf, 332, 424, 318, 418, 318, 430, BOW_PINK, 1.0, 1.5)
-    disc(buf, 316, 424, 4.5, BOW_PINK, 1.0, 1.2)
-    ellipse(buf, 316, 464, 34, 28, BUNNY, 1.0, 2.0)
-    ellipse(buf, 316, 464, 30, 24, BUNNY_DARK, 0.35, 2.0)
+    # mint knitted scarf wrapped around the neck, knot at the left
+    ellipse(buf, 256, 420, 122, 30, SCARF, 1.0, 2.0)
+    ellipse(buf, 256, 411, 120, 18, SCARF_DARK, 0.35, 2.0)
+    segment(buf, 150, 410, 150, 430, 3.0, SCARF_DARK, 0.6)
+    segment(buf, 362, 410, 362, 430, 3.0, SCARF_DARK, 0.6)
+    disc(buf, 185, 420, 17, SCARF_DARK, 1.0, 2.0)
+    disc(buf, 185, 420, 13, SCARF, 1.0, 2.0)
+    segment(buf, 178, 414, 192, 426, 3.0, SCARF_DARK, 0.6)
+    segment(buf, 192, 414, 178, 426, 3.0, SCARF_DARK, 0.6)
 
-    # kitten paws hugging the bunny from both sides
-    ellipse(buf, 218, 452, 38, 23, CREAM_DARK, 0.6, 2.0)
-    ellipse(buf, 372, 448, 38, 23, CREAM_DARK, 0.6, 2.0)
-    ellipse(buf, 218, 452, 36, 21, CREAM, 1.0, 2.0)
-    ellipse(buf, 372, 448, 36, 21, CREAM, 1.0, 2.0)
-    segment(buf, 210, 438, 210, 452, 2.0, (190, 160, 120), 0.9)
-    segment(buf, 224, 438, 224, 452, 2.0, (190, 160, 120), 0.9)
-    segment(buf, 364, 434, 364, 448, 2.0, (190, 160, 120), 0.9)
-    segment(buf, 378, 434, 378, 448, 2.0, (190, 160, 120), 0.9)
+    # tiny frog hugged at the lower centre: body, belly, stalk eyes, smile
+    disc(buf, 306, 448, 44, FROG, 1.0, 2.0)
+    ellipse(buf, 306, 458, 30, 26, FROG_BELLY, 1.0, 2.0)
+    disc(buf, 284, 398, 15, FROG, 1.0, 1.5)
+    disc(buf, 328, 398, 15, FROG, 1.0, 1.5)
+    disc(buf, 284, 398, 7.5, PUPIL, 1.0, 1.2)
+    disc(buf, 328, 398, 7.5, PUPIL, 1.0, 1.2)
+    disc(buf, 281, 395, 2.6, (255, 255, 255), 0.95, 1.0)
+    disc(buf, 325, 395, 2.6, (255, 255, 255), 0.95, 1.0)
+    segment(buf, 288, 448, 306, 456, 2.5, INK, 0.9)
+    segment(buf, 306, 456, 324, 448, 2.5, INK, 0.9)
+    ellipse(buf, 280, 446, 8, 5, BLUSH, 0.5, 1.5)
+    ellipse(buf, 332, 446, 8, 5, BLUSH, 0.5, 1.5)
+    # a tiny white daisy tucked between the frog's eyes
+    flower(buf, 306, 380, 9, (255, 255, 255), (255, 201, 60))
+
+    # cub paws hugging the frog from both sides
+    ellipse(buf, 224, 452, 38, 23, PANDA_DARK, 0.6, 2.0)
+    ellipse(buf, 388, 448, 38, 23, PANDA_DARK, 0.6, 2.0)
+    ellipse(buf, 224, 452, 36, 21, PANDA, 1.0, 2.0)
+    ellipse(buf, 388, 448, 36, 21, PANDA, 1.0, 2.0)
+    segment(buf, 216, 438, 216, 452, 2.0, (150, 80, 45), 0.9)
+    segment(buf, 230, 438, 230, 452, 2.0, (150, 80, 45), 0.9)
+    segment(buf, 380, 434, 380, 448, 2.0, (150, 80, 45), 0.9)
+    segment(buf, 394, 434, 394, 448, 2.0, (150, 80, 45), 0.9)
 
     # two tiny floating hearts
     for cx, cy, s in [(88, 430, 9), (438, 300, 8)]:
-        disc(buf, cx - s * 0.45, cy - s * 0.25, s * 0.55, BOW_PINK, 0.55, 1.5)
-        disc(buf, cx + s * 0.45, cy - s * 0.25, s * 0.55, BOW_PINK, 0.55, 1.5)
+        disc(buf, cx - s * 0.45, cy - s * 0.25, s * 0.55,
+             (242, 140, 168), 0.55, 1.5)
+        disc(buf, cx + s * 0.45, cy - s * 0.25, s * 0.55,
+             (242, 140, 168), 0.55, 1.5)
         triangle(buf, cx - s, cy, cx + s, cy, cx, cy + s * 1.1,
-                 BOW_PINK, 0.55, 1.5)
+                 (242, 140, 168), 0.55, 1.5)
+
+    # a tiny daisy filling the bottom-right corner
+    flower(buf, 432, 472, 10, (255, 255, 255), (255, 201, 60))
 
     return buf
-
 
 # ---------------------------------------------------------------- upscale
 def upscale(buf):
